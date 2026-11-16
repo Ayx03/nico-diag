@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>ニコニコ 环境检测 · 播放/地区/DRM 自检</title>
+<style>
+:root{
+  --bg:#0f1419; --card:#171d24; --line:#242c36; --fg:#e6edf3; --dim:#8b98a5;
+  --ok:#3fb950; --warn:#d29922; --bad:#f85149; --acc:#58a6ff;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:15px/1.65 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  padding:16px 14px 60px;max-width:720px;margin:0 auto}
+h1{font-size:20px;margin:8px 0 2px}
+.sub{color:var(--dim);font-size:12.5px;margin-bottom:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:12px 14px;margin:10px 0;border-width:1px;border-style:solid}
+.card.good{border-color:rgba(63,185,80,.5)}
+.card.warn{border-color:rgba(210,153,34,.5)}
+.card.bad{border-color:rgba(248,81,73,.55)}
+.chead{font-size:12.5px;color:var(--dim);margin-bottom:6px;letter-spacing:.04em}
+.row{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04);
+  align-items:flex-start;font-size:13.5px}
+.row:last-child{border-bottom:none}
+.row .k{color:var(--dim);flex:0 0 auto;min-width:96px;max-width:44%}
+.row .v{flex:1;word-break:break-word}
+.ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)} .dimc{color:var(--dim)}
+.verdict{display:flex;gap:10px;align-items:flex-start;padding:14px;border-radius:12px;
+  border:1px solid var(--line);background:var(--card);margin:12px 0 16px}
+.dot{width:10px;height:10px;border-radius:50%;flex:0 0 10px;margin-top:7px;background:var(--dim)}
+.vtitle{font-weight:700;font-size:15px;margin-bottom:4px}
+.vbody{font-size:13px;color:#c3ccd6;white-space:pre-wrap}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line);
+  border-top-color:var(--acc);border-radius:50%;animation:r .8s linear infinite;vertical-align:-1px}
+@keyframes r{to{transform:rotate(360deg)}}
+button{appearance:none;border:1px solid var(--line);background:#1d2530;color:var(--fg);
+  font:inherit;font-size:13.5px;padding:9px 14px;border-radius:9px;cursor:pointer}
+button:active{background:#26303c}
+button.primary{background:var(--acc);color:#0b1116;border-color:var(--acc);font-weight:600}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+a.btn{display:inline-block;text-decoration:none;border:1px solid var(--line);background:#1d2530;
+  color:var(--fg);font-size:13.5px;padding:9px 14px;border-radius:9px}
+a.btn.primary{background:var(--acc);color:#0b1116;border-color:var(--acc);font-weight:600}
+details{background:var(--card);border:1px solid var(--line);border-radius:10px;
+  padding:10px 14px;margin:8px 0}
+details summary{cursor:pointer;font-size:13.5px;font-weight:600;outline:none}
+details .ans{margin-top:8px;font-size:13px;color:#c3ccd6;white-space:pre-wrap;line-height:1.7}
+.tip{font-size:12.5px;color:var(--dim);background:rgba(88,166,255,.06);
+  border-left:3px solid var(--acc);padding:9px 12px;border-radius:0 8px 8px 0;margin:10px 0}
+.hr{height:1px;background:var(--line);margin:18px 0}
+</style>
+</head>
+<body>
+
+<h1>ニコニコ 环境检测</h1>
+<div class="sub">检测本机能否正常观看 niconico（地区 / 域名 / DRM / 订阅方式）</div>
+
+<div class="verdict" id="verdict">
+  <div class="dot" id="vdot"></div>
+  <div style="flex:1">
+    <div class="vtitle" id="vtitle">正在检测…</div>
+    <div class="vbody" id="vbody">本地项先出结果，网络项稍后填进来</div>
+  </div>
+</div>
+
+<div class="btnrow">
+  <button class="primary" onclick="runAll()">重新检测</button>
+  <button onclick="copyReport()">复制结果</button>
+  <a class="btn" id="apk" href="./nico-diag.apk" download>下载安卓检测 App</a>
+</div>
+
+<div class="card" id="c-dev">
+  <div class="chead">本机</div>
+  <div id="dev"></div>
+</div>
+
+<div class="card" id="c-net">
+  <div class="chead">网络与出口</div>
+  <div id="net"></div>
+</div>
+
+<div class="card" id="c-host">
+  <div class="chead">niconico 域名连通性</div>
+  <div id="hosts"></div>
+  <div class="tip">浏览器出于安全限制读不到 HTTP 状态码，这里只能判断「有没有响应」。<b>要看到真实的 200 / 403 请用上面的安卓 App。</b></div>
+</div>
+
+<div class="card" id="c-drm">
+  <div class="chead">DRM（播放必需）</div>
+  <div id="drm"></div>
+</div>
+
+<div class="hr"></div>
+
+<h1 style="font-size:16px">常见问题</h1>
+
+<details><summary>没有 Google 服务 / 装不了 Play 商店，能看吗？</summary><div class="ans">能看。
+niconico 的播放靠系统自带的 Widevine 版权模块，和 Google Play 服务是两回事 —— 没有 Play 服务也能播放视频。
+
+但「自己订阅会员」不行：App 内的订阅走 Google Play 内购，没有 Play 服务就没法付款。
+
+需要开通会员，把账号发给我们代开即可，不影响你观看。</div></details>
+
+<details><summary>为什么会员页打不开（403）？</summary><div class="ans">premium.nicovideo.jp 的部分路径对机房 IP 有访问控制，会直接返回 403。
+这不影响你观看，也不影响代开 —— 代开是在我们这边完成的。
+
+如果你自己打开会员页出现 403，换一个日本节点再试，或者直接用网页版首页登录。</div></details>
+
+<details><summary>视频黑屏 / 只有声音没画面</summary><div class="ans">这是 DRM 版权保护在正常工作。
+niconico 的受保护内容会走系统安全通道，截图、录屏、投屏、采集卡都会黑屏 —— 这是设计如此，不是设备坏了。
+
+如果正片本体黑屏（不是截图时黑），才说明 DRM 有问题：
+① 先看本页「DRM」那一栏是不是「支持」；
+② 套壳浏览器（微信、QQ、UC、夸克等）经常拿不到 Widevine，换官方 Chrome 或直接用 App；
+③ 都不行就是设备真的没有 Widevine 模块，这种只能换设备或用电脑看。</div></details>
+
+<details><summary>能播，但画质差 / 卡顿</summary><div class="ans">① 先在播放页手动选画质，不要用「自动」——自动经常按网络状况往下压。
+② 换一个日本节点：niconico 的视频 CDN 对节点质量很敏感，同一个机场不同 IP 差别很大。
+③ 不要在播放时同时挂着下载或其他大流量任务。</div></details>
+
+<details><summary>本页显示都正常，但 App 还是打不开</summary><div class="ans">先区分是「网络」还是「App」的问题：
+· 用 Chrome 打开 www.nicovideo.jp，能正常刷出内容 → 网络没问题，是 App 的问题；
+· Chrome 也打不开 → 节点问题，换节点。
+
+App 的问题通常是：
+· App 版本太旧被强制更新（去 Google Play 或官网更新）；
+· App 缓存损坏 —— 到系统设置里清除 niconico 的缓存和数据后重新登录；
+· 分应用代理把它排除在外了（有的代理 App 可以按应用设置）。</div></details>
+
+<details><summary>代开安全吗？需要提供什么？</summary><div class="ans">只需要提供 niconico 账号和密码，我们登录后在网页端完成订阅。
+不需要你提供 Google 账号、不需要信用卡、不需要手机验证码。
+
+开完之后你在自己的设备上直接登录就能看到会员权益，订阅期内在任何设备上都有效。</div></details>
+
+<script>
+"use strict";
+var R = { ip:null, cc:null, hosts:{}, drm:null, ua:null };
+var $ = function(id){ return document.getElementById(id); };
+
+function esc(s){ return String(s).replace(/[<>&]/g, function(c){ return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c]; }); }
+function row(k, v){ return '<div class="row"><span class="k">'+esc(k)+'</span><span class="v">'+v+'</span></div>'; }
+function pend(id, k){ return '<div class="row" data-k="'+esc(k)+'"><span class="k">'+esc(k)+'</span><span class="v"><span class="spin"></span></span></div>'; }
+
+var T0 = Date.now();
+function ms(){ return Date.now() - T0; }
+
+function withTimeout(fn, t){
+  return new Promise(function(res, rej){
+    var done = false;
+    var timer = setTimeout(function(){ if(!done){ done = true; rej(new Error('timeout')); } }, t || 9000);
+    fn().then(function(v){ if(!done){ done = true; clearTimeout(timer); res(v); } })
+        .catch(function(e){ if(!done){ done = true; clearTimeout(timer); rej(e); } });
+  });
+}
+
+/* ---------------- 本机 ---------------- */
+function checkDev(){
+  var ua = navigator.userAgent;
+  R.ua = ua;
+  var br = '未知';
+  if (/Edg\//.test(ua)) br = 'Edge';
+  else if (/Chrome\//.test(ua) && !/OPR|Edg|UCBrowser|QQBrowser|MQQBrowser/.test(ua)) br = 'Chrome';
+  else if (/Firefox\//.test(ua)) br = 'Firefox';
+  else if (/Safari\//.test(ua) && !/Chrome/.test(ua)) br = 'Safari';
+  else if (/MicroMessenger/.test(ua)) br = '微信内置浏览器';
+  else if (/QQBrowser|MQQBrowser/.test(ua)) br = 'QQ 浏览器';
+  else if (/UCBrowser|Quark/.test(ua)) br = 'UC / 夸克';
+
+  var isApp = /MicroMessenger|QQBrowser|MQQBrowser|UCBrowser|Quark|Weibo/.test(ua);
+  var col = isApp ? 'warn' : 'ok';
+  var tip = isApp ? '（套壳浏览器，可能拿不到 DRM）' : '';
+
+  $('dev').innerHTML =
+    row('系统', esc(navigator.platform || '未知')) +
+    row('浏览器', '<span class="'+col+'">'+esc(br)+tip+'</span>') +
+    row('语言', esc(navigator.language || '?')) +
+    row('时区', esc(Intl.DateTimeFormat().resolvedOptions().timeZone || '?'));
+}
+
+/* ---------------- 出口 IP ---------------- */
+var IPAPIS = [
+  { n:'ipwho.is',  u:'https://ipwho.is/' },
+  { n:'ipapi.co',  u:'https://ipapi.co/json/' },
+  { n:'ip.sb',     u:'https://api.ip.sb/geoip' },
+  { n:'ipinfo.io', u:'https://ipinfo.io/json' }
+];
+
+function pick(o, keys){
+  for (var i=0;i<keys.length;i++){
+    var v = o[keys[i]];
+    if (v !== undefined && v !== null && v !== '' && v !== 'null') return String(v);
+  }
+  return '';
+}
+
+function probeIp(src){
+  return withTimeout(function(){
+    return fetch(src.u + '?t=' + Date.now(), {cache:'no-store'}).then(function(r){ return r.json(); });
+  }, 8000).then(function(d){
+    return {
+      src: src.n,
+      ip: pick(d, ['ip','query']),
+      cc: pick(d, ['country_code','countryCode','country','country_name']),
+      country: pick(d, ['country','country_name']),
+      city: pick(d, ['city']),
+      isp: pick(d, ['connection','org','isp','asn_org']),
+      ok: true
+    };
+  }).catch(function(e){
+    return { src: src.n, ok: false, err: (e && e.message === 'timeout') ? '超时' : '失败' };
+  });
+}
+
+function checkNet(){
+  var html = pend('', '出口 IP');
+  $('net').innerHTML = html;
+
+  Promise.all(IPAPIS.map(probeIp)).then(function(list){
+    var good = list.filter(function(x){ return x.ok && x.ip; });
+    var out = '';
+    list.forEach(function(x){
+      if (!x.ok || !x.ip) { out += row(x.src, '<span class="bad">' + esc(x.err || '失败') + '</span>'); return; }
+      var cc = (x.cc || '').toUpperCase();
+      var col = cc === 'JP' ? 'ok' : (cc ? 'bad' : '');
+      var line = esc(x.ip) + (cc ? ' · ' + esc(cc) : '');
+      if (x.city) line += ' ' + esc(x.city);
+      if (x.isp) line += ' · ' + esc(x.isp).slice(0, 40);
+      out += row(x.src, '<span class="'+col+'">' + line + '</span>');
+      if (cc === 'JP' && !R.cc) R.cc = 'JP';
+    });
+
+    if (good.length) { R.ip = good[0].ip; R.cc = (good[0].cc || '').toUpperCase(); }
+    var vpn = '未检测（浏览器无法判断）';
+    out = row('代理状态', '<span class="dim">'+vpn+'</span>') + out;
+    $('net').innerHTML = out;
+    updateVerdict();
+  });
+}
+
+/* ---------------- 域名连通（no-cors，只能判断有无响应） ---------------- */
+var HOSTS = [
+  ['www.nicovideo.jp',        '/',        '首页',          true],
+  ['account.nicovideo.jp',    '/login',   '登录',          true],
+  ['premium.nicovideo.jp',    '/payment', '会员 / 订阅入口', false],
+  ['api.id.nicovideo.jp',     '/',        '账号 API',      false],
+  ['point.nicovideo.jp',      '/',        '积分',          false],
+  ['cast-video.nicovideo.jp', '/',        '投屏',          false]
+];
+var HOST_CRIT = {};
+HOSTS.forEach(function(h){ HOST_CRIT[h[0]] = h[3]; });
+
+function reachable(url, t){
+  var t0 = Date.now();
+  return withTimeout(function(){
+    return fetch(url, {mode:'no-cors', cache:'no-store'});
+  }, t || 12000).then(function(){
+    return { ok:true, ms: Date.now()-t0 };
+  }).catch(function(e){
+    return { ok:false, ms: Date.now()-t0, err: (e && e.message==='timeout') ? '超时' : '不通' };
+  });
+}
+
+function checkHosts(){
+  $('hosts').innerHTML = HOSTS.map(function(h){ return pend('', h[0]); }).join('');
+  HOSTS.forEach(function(h){
+    reachable('https://' + h[0] + h[1] + (h[1].indexOf('?')>=0?'&':'?') + 't=' + Date.now(), 12000)
+      .then(function(r){
+        r.crit = HOST_CRIT[h[0]];
+        R.hosts[h[0]] = r;
+        var el = document.querySelector('#hosts [data-k="'+h[0]+'"] .v');
+        if (!el) return;
+        if (r.ok) {
+          el.innerHTML = '<span class="ok">有响应 ' + r.ms + 'ms</span> <span class="dimc">（未校验状态码）</span>';
+        } else if (r.crit) {
+          el.innerHTML = '<span class="bad">不通 · ' + esc(r.err) + '</span>';
+        } else {
+          el.innerHTML = '<span class="warn">' + esc(r.err) + '</span> <span class="dimc">（非关键，不影响观看）</span>';
+        }
+        updateVerdict();
+      });
+  });
+}
+
+/* ---------------- DRM ---------------- */
+function checkDRM(){
+  $('drm').innerHTML = pend('', 'Widevine');
+
+  var ct = 'video/mp4;codecs="avc1.42E01E"';
+  var levels = [
+    { name:'L1（硬件级）', rb:'HW_SECURE_CRYPTO' },
+    { name:'L3（软件级）', rb:'SW_SECURE_CRYPTO' },
+    { name:'基础',        rb:'' }
+  ];
+
+  function tryLevel(i){
+    if (i >= levels.length) return Promise.reject(new Error('none'));
+    var lv = levels[i];
+    var cap = { contentType: ct };
+    if (lv.rb) cap.robustness = lv.rb;
+    var cfg = [{ initDataTypes:['cenc'], videoCapabilities:[cap] }];
+    return navigator.requestMediaKeySystemAccess('com.widevine.alpha', cfg)
+      .then(function(){ return lv; })
+      .catch(function(){ return tryLevel(i+1); });
+  }
+
+  if (!navigator.requestMediaKeySystemAccess) {
+    R.drm = { ok:false };
+    $('drm').innerHTML = row('Widevine', '<span class="bad">本浏览器不支持 DRM 检测</span>');
+    updateVerdict();
+    return;
+  }
+
+  tryLevel(0).then(function(lv){
+    R.drm = { ok:true, level: lv.name };
+    var col = lv.name.indexOf('L1') === 0 ? 'ok' : 'warn';
+    var note = lv.name.indexOf('L1') === 0
+      ? '可正常播放，支持高清'
+      : (lv.name.indexOf('L3') === 0 ? '可以播放，但高清可能受限' : '可以播放');
+    $('drm').innerHTML = row('Widevine', '<span class="'+col+'">支持 · '+esc(lv.name)+'</span>')
+      + row('说明', '<span class="dimc">'+esc(note)+'</span>');
+    updateVerdict();
+  }).catch(function(){
+    R.drm = { ok:false };
+    $('drm').innerHTML =
+      row('Widevine', '<span class="bad">不支持（视频将无法播放）</span>') +
+      row('建议', '<span class="dimc">换官方 Chrome / 直接用 App / 换设备</span>');
+    updateVerdict();
+  });
+}
+
+/* ---------------- 结论 ---------------- */
+function updateVerdict(){
+  var dot = $('vdot'), t = $('vtitle'), b = $('vbody');
+  var setV = function(color, title, body){
+    dot.style.background = color;
+    t.textContent = title;
+    t.style.color = color;
+    b.textContent = body;
+  };
+
+  if (R.ip === null) { setV('#8b98a5', '正在检测…', '本地项先出结果，网络项稍后填进来'); return; }
+
+  var hostList = Object.keys(R.hosts);
+  var deadCrit = hostList.filter(function(h){ return !R.hosts[h].ok && R.hosts[h].crit; });
+  var allCritDone = HOSTS.filter(function(h){ return h[3]; })
+                        .every(function(h){ return !!R.hosts[h[0]]; });
+
+  if (!R.ip) {
+    setV('#f85149', '连不上网络', '出口 IP 一个都没拿到。\n先确认手机/电脑能正常上网，再重新检测。');
+    return;
+  }
+  if (R.cc && R.cc !== 'JP') {
+    setV('#f85149', '当前出口不在日本',
+      '检测到的出口国家是 ' + R.cc + '，niconico 的部分内容会受限。\n' +
+      '请连接日本节点后重新检测。\n' +
+      '（注意：部分内容海外也能看，但直播、特定番组会被拦。）');
+    return;
+  }
+  if (allCritDone && deadCrit.length) {
+    setV('#f85149', '核心域名不通',
+      '不通：' + deadCrit.map(function(h){ return h; }).join('、') + '\n' +
+      '典型原因：节点能连其他网站，但对这几个域名握手被丢。换一个日本节点再测。\n' +
+      '（会员页之类打不开通常不影响观看，可以忽略。）');
+    return;
+  }
+  if (R.drm && !R.drm.ok) {
+    setV('#f85149', '这个浏览器拿不到 Widevine DRM',
+      'niconico 的受保护内容靠 Widevine，拿不到就播不了。\n' +
+      '常见原因：微信 / QQ / UC / 夸克等套壳浏览器，或者系统浏览器被精简过。\n' +
+      '换成官方 Chrome，或直接用安卓 App 再测一次。\n' +
+      '（注意：截图、录屏、投屏时画面黑掉是正常的版权保护，不代表播不了。）');
+    return;
+  }
+  if (R.drm && R.drm.level && R.drm.level.indexOf('L3') === 0) {
+    setV('#d29922', '能看，但画质可能受限',
+      '这台设备的 DRM 是 L3（软件级），受保护内容通常只能出标清。\n' +
+      '想稳定看高清需要 L1（硬件级），这是设备出厂认证决定的，改不了。');
+    return;
+  }
+
+  setV('#3fb950', '可以正常观看',
+    '出口在日本、niconico 域名可达、DRM 正常。\n' +
+    '在 App 或浏览器里登录账号即可观看。\n' +
+    '如果需要开通会员：本机没有 Google 服务也能看，订阅把账号发给我们代开即可。');
+}
+
+/* ---------------- 复制 ---------------- */
+function copyReport(){
+  var L = [];
+  L.push('【ニコニコ 环境检测】' + new Date().toLocaleString('zh-CN'));
+  L.push('');
+  L.push('[本机]');
+  L.push('  浏览器: ' + (document.querySelector('#dev .row:nth-child(2) .v') || {}).textContent || '?');
+  L.push('');
+  L.push('[出口]');
+  var nodes = document.querySelectorAll('#net .row');
+  for (var i=0;i<nodes.length;i++){
+    var k = nodes[i].querySelector('.k'), v = nodes[i].querySelector('.v');
+    if (k && v) L.push('  ' + k.textContent + ': ' + v.textContent.trim());
+  }
+  L.push('');
+  L.push('[域名]');
+  for (var h in R.hosts){
+    var r = R.hosts[h];
+    L.push('  ' + h + ': ' + (r.ok ? ('有响应 ' + r.ms + 'ms') : ('不通 ' + (r.err||''))));
+  }
+  L.push('');
+  L.push('[DRM]');
+  L.push('  ' + (R.drm ? (R.drm.ok ? ('Widevine ' + R.drm.level) : '不支持') : '未检测'));
+  L.push('');
+  L.push('[结论] ' + $('vtitle').textContent);
+
+  var txt = L.join('\n');
+  var done = function(){ 
+    var btn = event && event.target;
+    if (btn) { var o = btn.textContent; btn.textContent = '已复制'; setTimeout(function(){ btn.textContent = o; }, 1500); }
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(txt).then(done).catch(function(){ fallback(txt); });
+  } else { fallback(txt); }
+  function fallback(t){
+    var ta = document.createElement('textarea');
+    ta.value = t; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } catch(e){ alert(t); }
+    document.body.removeChild(ta);
+  }
+}
+
+/* ---------------- 启动 ---------------- */
+function runAll(){
+  R = { ip:null, cc:null, hosts:{}, drm:null, ua:null };
+  $('vdot').style.background = '#8b98a5';
+  $('vtitle').textContent = '正在检测…';
+  $('vbody').textContent = '本地项先出结果，网络项稍后填进来';
+  checkDev();
+  checkNet();
+  checkHosts();
+  checkDRM();
+}
+
+runAll();
+</script>
+</body>
+</html>
