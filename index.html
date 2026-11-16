@@ -113,7 +113,7 @@ niconico 的受保护内容会走系统安全通道，截图、录屏、投屏�
 
 如果正片本体黑屏（不是截图时黑），才说明 DRM 有问题：
 ① 先看本页「DRM」那一栏是不是「支持」；
-② 套壳浏览器（微信、QQ、UC、夸克等）经常拿不到 Widevine，换官方 Chrome 或直接用 App；
+② 非 Chrome 浏览器（微信、QQ、UC、夸克等）经常拿不到 Widevine，换官方 Chrome 或直接用 App；
 ③ 都不行就是设备真的没有 Widevine 模块，这种只能换设备或用电脑看。</div></details>
 
 <details><summary>能播，但画质差 / 卡顿</summary><div class="ans">① 先在播放页手动选画质，不要用「自动」——自动经常按网络状况往下压。
@@ -140,6 +140,41 @@ var R = { ip:null, cc:null, hosts:{}, drm:null, ua:null };
 var $ = function(id){ return document.getElementById(id); };
 
 function esc(s){ return String(s).replace(/[<>&]/g, function(c){ return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c]; }); }
+
+/* ---------------- 浏览器身份 ---------------- */
+var UA = navigator.userAgent || "";
+var IS_ANDROID    = /Android/.test(UA);
+var IS_EDGE_FAMILY = /Edg\/|EdgA\/|EdgiOS\//.test(UA);
+var IS_CHROME     = /Chrome\//.test(UA) && !IS_EDGE_FAMILY && !/OPR\/|SamsungBrowser|Firefox/.test(UA);
+var IS_WECHAT     = /MicroMessenger|WeChat\/|wxwork|MMWEBSDK|XWEB\//i.test(UA);
+var IS_SAFARI     = /Safari\//.test(UA) && !/CriOS|FxiOS|EdgiOS|OPiOS|GSA\//.test(UA);
+
+/* 非 Chrome 浏览器 / WebView 识别：UA 能伪造，但这些对象伪造不了 */
+function webviewCheck(){
+  if (!IS_ANDROID) return {yes:false, why:""};
+  if (/Firefox|FxiOS/.test(UA)) return {yes:false, why:""};   // 火狐是正经浏览器
+  var score = 0, why = [];
+  var uad = navigator.userAgentData;
+  if (!uad) { score += 2; why.push("无 Client Hints"); }
+  else {
+    var b = ((uad.brands) || []).map(function(x){ return x.brand; }).join(",");
+    if (b && !/Google Chrome/.test(b)) { score += 3; why.push("Client Hints 无 Google Chrome（" + b + "）"); }
+  }
+  if (typeof window.chrome === "undefined") { score += 2; why.push("无 window.chrome"); }
+  if (typeof Notification === "undefined")  { score += 2; why.push("无 Notification"); }
+  if (typeof navigator.getInstalledRelatedApps !== "function") { score += 1; why.push("无 getInstalledRelatedApps"); }
+  if (/;\s*wv\)/.test(UA)) { score += 5; why.push("UA 含 wv"); }
+  return {yes: score >= 2, score: score, why: why.join(" · ")};
+}
+
+/* 安卓上拉起官方 Chrome */
+function chromeIntent(){
+  var here = location.href;
+  if (!/^https?:\/\//.test(here)) return "";
+  var body = here.replace(/^https?:\/\//, "");
+  return "intent://" + body + "#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url="
+       + encodeURIComponent(here) + ";end";
+}
 function row(k, v){ return '<div class="row"><span class="k">'+esc(k)+'</span><span class="v">'+v+'</span></div>'; }
 function pend(id, k){ return '<div class="row" data-k="'+esc(k)+'"><span class="k">'+esc(k)+'</span><span class="v"><span class="spin"></span></span></div>'; }
 
@@ -156,27 +191,42 @@ function withTimeout(fn, t){
 }
 
 /* ---------------- 本机 ---------------- */
+function browserName(){
+  if (IS_WECHAT) return '微信内置浏览器';
+  if (/QQBrowser|MQQBrowser/.test(UA)) return 'QQ 浏览器';
+  if (/UCBrowser|Quark|SogouMobileBrowser|baidubrowser|HuaWeiBrowser|MiuiBrowser/.test(UA)) return '国产浏览器';
+  if (IS_EDGE_FAMILY) return 'Edge';
+  if (IS_CHROME) return 'Google Chrome';
+  if (/Firefox\//.test(UA)) return 'Firefox';
+  if (IS_SAFARI) return 'Safari';
+  return '未能识别';
+}
+
 function checkDev(){
-  var ua = navigator.userAgent;
-  R.ua = ua;
-  var br = '未知';
-  if (/Edg\//.test(ua)) br = 'Edge';
-  else if (/Chrome\//.test(ua) && !/OPR|Edg|UCBrowser|QQBrowser|MQQBrowser/.test(ua)) br = 'Chrome';
-  else if (/Firefox\//.test(ua)) br = 'Firefox';
-  else if (/Safari\//.test(ua) && !/Chrome/.test(ua)) br = 'Safari';
-  else if (/MicroMessenger/.test(ua)) br = '微信内置浏览器';
-  else if (/QQBrowser|MQQBrowser/.test(ua)) br = 'QQ 浏览器';
-  else if (/UCBrowser|Quark/.test(ua)) br = 'UC / 夸克';
+  R.ua = UA;
+  var wv = webviewCheck();
+  var name = browserName();
+  // 只有官方 Chrome 报出的 DRM 等级可信；Edge 也偏保守，安卓非 Chrome 基本不可信
+  var trusted = IS_CHROME || (!IS_ANDROID && IS_EDGE_FAMILY);
+  var col = trusted ? 'ok' : 'warn';
+  var tip = trusted ? '' : '（非官方 Chrome，DRM 结果仅供参考）';
 
-  var isApp = /MicroMessenger|QQBrowser|MQQBrowser|UCBrowser|Quark|Weibo/.test(ua);
-  var col = isApp ? 'warn' : 'ok';
-  var tip = isApp ? '（套壳浏览器，可能拿不到 DRM）' : '';
-
-  $('dev').innerHTML =
-    row('系统', esc(navigator.platform || '未知')) +
-    row('浏览器', '<span class="'+col+'">'+esc(br)+tip+'</span>') +
+  var html =
+    row('系统', esc(IS_ANDROID ? 'Android' : (navigator.platform || '未知'))) +
+    row('浏览器', '<span class="'+col+'">'+esc(name)+tip+'</span>') +
     row('语言', esc(navigator.language || '?')) +
     row('时区', esc(Intl.DateTimeFormat().resolvedOptions().timeZone || '?'));
+
+  if (wv.yes) {
+    html += row('识别', '<span class="warn">非 Chrome 浏览器（WebView 内核）· '+esc(wv.why)+'</span>');
+    var ci = chromeIntent();
+    html += row('建议', (ci
+        ? '<a href="'+ci+'" style="color:#ffd166">用 Chrome 打开本页 →</a>'
+        : '<span class="dimc">请复制本页地址到 Chrome 里打开</span>'));
+  } else if (!trusted) {
+    html += row('建议', '<span class="dimc">DRM 那一栏可能虚低，用官方 Chrome 或下方 App 复测</span>');
+  }
+  $('dev').innerHTML = html;
 }
 
 /* ---------------- 出口 IP ---------------- */
@@ -312,20 +362,25 @@ function checkDRM(){
     return;
   }
 
+  var CAVEAT = '<div class="tip">浏览器报出的 DRM 等级可能<b>低于</b>设备实际能力 —— '
+    + '非 Chrome 浏览器（Edge、Via、国产浏览器等）经常把 L1 显示成 L3，甚至直接报不支持。'
+    + '<b>只有官方 Chrome 报出的 L1 才算数</b>；安卓上真实的 L1 / L3、GMS、内购，请以下方 App 的结果为准。</div>';
+
   tryLevel(0).then(function(lv){
     R.drm = { ok:true, level: lv.name };
     var col = lv.name.indexOf('L1') === 0 ? 'ok' : 'warn';
     var note = lv.name.indexOf('L1') === 0
       ? '可正常播放，支持高清'
       : (lv.name.indexOf('L3') === 0 ? '可以播放，但高清可能受限' : '可以播放');
+    if (!IS_CHROME) note += '（这个浏览器不一定准）';
     $('drm').innerHTML = row('Widevine', '<span class="'+col+'">支持 · '+esc(lv.name)+'</span>')
-      + row('说明', '<span class="dimc">'+esc(note)+'</span>');
+      + row('说明', '<span class="dimc">'+esc(note)+'</span>') + CAVEAT;
     updateVerdict();
   }).catch(function(){
     R.drm = { ok:false };
     $('drm').innerHTML =
-      row('Widevine', '<span class="bad">不支持（视频将无法播放）</span>') +
-      row('建议', '<span class="dimc">换官方 Chrome / 直接用 App / 换设备</span>');
+      row('Widevine', '<span class="bad">这个浏览器拿不到 Widevine</span>') +
+      row('建议', '<span class="dimc">换官方 Chrome / 直接用 App 再测</span>') + CAVEAT;
     updateVerdict();
   });
 }
@@ -365,15 +420,32 @@ function updateVerdict(){
       '（会员页之类打不开通常不影响观看，可以忽略。）');
     return;
   }
+  var wv = webviewCheck();
   if (R.drm && !R.drm.ok) {
-    setV('#f85149', '这个浏览器拿不到 Widevine DRM',
-      'niconico 的受保护内容靠 Widevine，拿不到就播不了。\n' +
-      '常见原因：微信 / QQ / UC / 夸克等套壳浏览器，或者系统浏览器被精简过。\n' +
-      '换成官方 Chrome，或直接用安卓 App 再测一次。\n' +
-      '（注意：截图、录屏、投屏时画面黑掉是正常的版权保护，不代表播不了。）');
+    if (!IS_CHROME) {
+      setV('#d29922', '这个浏览器测不出 Widevine —— 不代表设备不行',
+        '您现在用的不是官方 Chrome' + (wv.yes ? '，而且已被识别为 WebView 内核（' + wv.why + '）' : '') + '。\n' +
+        '这类浏览器经常拿不到 Widevine，所以这一项报错不能当作设备结论。\n\n' +
+        '正确做法：\n' +
+        '① 用官方 Chrome 打开本页复测（安卓会自动跳转）；\n' +
+        '② 或者直接用安卓 App 检测 —— App 走系统播放器，结果才作数。\n\n' +
+        '❗ 注意：截图、录屏、投屏时画面黑掉是正常的版权保护，不代表播不了。');
+      return;
+    }
+    setV('#f85149', '这台设备播不了（缺少 Widevine）',
+      '官方 Chrome 也拿不到 Widevine，说明系统里确实没有这个模块，视频一定播不了。\n' +
+      '常见于模拟器，以及部分没通过 Google 认证的国产机型。\n' +
+      '换其他品牌的安卓手机，或用电脑 Chrome / Edge 观看。');
     return;
   }
   if (R.drm && R.drm.level && R.drm.level.indexOf('L3') === 0) {
+    if (!IS_CHROME) {
+      setV('#d29922', '显示 L3，但这个浏览器不可信',
+        '浏览器报出的 DRM 等级经常比设备实际能力低（Edge、Via、国产浏览器尤其明显）。\n' +
+        '请用官方 Chrome 或安卓 App 复测，才能拿到真实的 L1 / L3。\n' +
+        '（就算是 L3 也能正常播放，只是高清可能受限，不影响日常观看。）');
+      return;
+    }
     setV('#d29922', '能看，但画质可能受限',
       '这台设备的 DRM 是 L3（软件级），受保护内容通常只能出标清。\n' +
       '想稳定看高清需要 L1（硬件级），这是设备出厂认证决定的，改不了。');
