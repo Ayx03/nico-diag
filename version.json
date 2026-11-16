@@ -1,7 +1,7 @@
 {
-  "versionCode": 4,
-  "versionName": "1.3",
-  "size": "41.1 KB",
+  "versionCode": 5,
+  "versionName": "1.4",
+  "size": "41.0 KB",
   "url": "https://g.imayx.top/nico-diag/nico-diag.apk",
-  "notes": "修复进度卡在 N/N-1（运营商/ASN 无数据时槽位补不齐）；修复检测超时提示被晚到回调覆盖；新增「诊断日志（复制 / 分享）」，含版本、设备、检测结果与上次崩溃"
+  "notes": "商城改为只放平台主页（微店 / 闲鱼 / 小红书），移除沿用自 FOD 的商品链接；网页新增联系方式区块"
 }
