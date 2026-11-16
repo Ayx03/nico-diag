@@ -1,7 +1,7 @@
 {
-  "versionCode": 1,
-  "versionName": "1.0",
-  "size": "39.8 KB",
+  "versionCode": 3,
+  "versionName": "1.2",
+  "size": "40.1 KB",
   "url": "https://g.imayx.top/nico-diag/nico-diag.apk",
-  "notes": "首个版本：地区 / 域名 / DRM / Google 服务 四项检测，先判能不能播，再判能不能自己订阅"
+  "notes": "修复启动闪退：applicationId 改成了新包名，但 namespace 还留着旧值，导致 Activity 找不到。顺带把安装包体积改为读取实际值"
 }
